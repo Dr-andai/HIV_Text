@@ -1,6 +1,6 @@
 #Clinical trials text analysis
 #set working directory
-setwd('C:/Users/Administrator/Documents/PROJECTS/HIV_Text')
+setwd('C:/Users/Admin/Documents/PROJECTS/HIV_Text')
 
 
 library(dplyr) # manipulating data
@@ -676,7 +676,6 @@ ggplot(hiv_behavioral, aes(x = institution_type)) +
        title = "Distribution of Primary Sponsors by Institution Type")
 
 
-
 # extracting trial ID code
 
 # Function to extract the last part of the URL
@@ -704,12 +703,37 @@ print(extracted_parts_string)
 
 
 
+#########
+# World map is available in the maps package
+library(maps)
+
+# No margin
+par(mar=c(0,0,0,0))
+
+# World map
+map('world',
+    col="#f2f2f2", fill=TRUE, bg="white", lwd=0.05,
+    mar=rep(0,4),border=0, ylim=c(-80,80) 
+)
 
 
+library(ggmap)
 
+register_google(key = "AIzaSyADngLnfcUhOTVqk1euPiz530YAjDlVKiI")
 
+hiv_behavioral <- hiv_behavioral %>%
+  mutate(GeocodeResult = geocode(primary_sponsor))
 
+hiv_behavioral$Latitude <- hiv_behavioral$GeocodeResult$lat
+hiv_behavioral$Longitude <- hiv_behavioral$GeocodeResult$lon
 
+names(hiv_behavioral)
+
+map('world',
+    col="#f2f2f2", fill=TRUE, bg="white", lwd=0.05,
+    mar=rep(0,4),border=0, ylim=c(-80,80) 
+)
+points(x=hiv_behavioral$Longitude, y=hiv_behavioral$Latitude, col="slateblue", cex=1, pch=20)
 
 
 
