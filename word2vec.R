@@ -20,6 +20,9 @@ library(extrafont)# import system fonts
 extrafont::loadfonts(device = "win")
 
 
+
+# The Goal of this Script is to extract Behavioural Interventions studies that
+# focus on HIV/AIDS among East Africa Countries over the past 20 years
 #Load Clinical Trials in Kenya Data Set
 # clinicals <- xmlToDataFrame("KenyaTrials.xml")
 KE_clinicals <- xmlToDataFrame("KenyaTrials.xml")
@@ -45,17 +48,11 @@ clinicals <- janitor::clean_names(clinicals)
 
 
 
-#What to do?
-## analysis on titles
-## extract topics that focus on children
 
-
-# -- Data was uploaded on 14th/06/2023
-
-# Create a data frame for Clinical Trials conducted over the last 5 years
+# Create a data frame for Clinical Trials conducted over the last 20 years
 # Obtain the following columns: Trial ID, Date of Registration(year and month),Condition and Scientific Title
 
-fiveyears <- clinicals[clinicals$date_registration >= "2019-01-01" & clinicals$date_registration <= "2023-06-01", ]
+
 twentyyears <- clinicals[clinicals$date_registration >= "2003-01-01" & clinicals$date_registration <= "2023-06-01", ]
 
 # create year and month date variables - method 1
@@ -74,7 +71,7 @@ class(years_m$year)
 
 
 # data frame Containing Clinical Trials from 2003.
-# with year and month as separate
+
 data <- years_m[ , c('trial_id','date_registration','phase','primary_sponsor','secondary_sponsor','condition','scientific_title',
                      'intervention','countries','target_size','primary_outcome','secondary_outcome','web_address')]
 
@@ -157,255 +154,6 @@ data$countries <- sapply(data$countries, remove_duplicates)
 data[31, ]
 
 
-# text column: combine scientific title column pri_outcome
-data$text <- paste(data$primary_outcome, data$scientific_title, sep=" ")
-row.names(data) <- NULL
-
-data_1 <- data[ , c('trial_id','date_registration','text')]
-
-
-
-
-
-
-
-
-
-
-
-
-## Text Mining
-# Create a corpus of the document
-
-data_corp <- corpus(data_1, text_field = 'text') #initialize corpus for scientific title
-
-summary(data_corp,3)
-#create a new id for the variables
-docid <- paste(data_corp$trial_id,
-               data_corp$date_registration,
-               sep= " ")
-docnames(data_corp) <- docid
-head(docvars(data_corp))
-
-
-
-# create tokens
-corp <- tokens(data_corp, what='word',
-               remove_punct = TRUE, remove_numbers = TRUE,
-               remove_symbols = TRUE, remove_separators = TRUE)
-# stem
-corp <- tokens_wordstem(corp, language = 'en')
-
-# remove stopwords 
-corp <- tokens_select(corp, stopwords(),selection = 'remove')
-corp[[24]]
-#construct a Document Feature Matrix
-corp_dfm <- dfm(corp)
-
-
-
-# Data visualization
-# Visualize a wordcloud of the Conditions and Scientific titles
-# Create a bigram using tokens_ngram
-toks_ngram <- tokens_ngrams(corp, n = 2, concatenator = " ")
-head(toks_ngram[[1]], 30)
-
-# wordcloud plot
-# load quanteda packages
-library("quanteda.textplots")
-library("quanteda.textstats")
-bigram <- dfm(toks_ngram)
-bigram_freq<-textstat_frequency(bigram)
-
-textplot_wordcloud(bigram,max_words = 100,
-                   ordered_color = TRUE)
-
-
-# Observe the distribution of date of registration over the years
-years_m %>%
-  ggplot(aes(x=date_registration, color= factor(month)))+
-  geom_bar(show.legend = FALSE)+
-  labs(y="Date",
-       x= "Article counts",
-       title = "Scientific titles")
-
-# Asses the frequency distribution of the bigrams, data grouped per year
-word_freq <- textstat_frequency(bigram, groups = data$year)
-
-# frequency plot of the top 10 most frequent word
-features_corpdfm <- textstat_frequency(bigram, n=10)
-features_corpdfm$feature <- with(features_corpdfm, reorder(feature, -frequency))
-ggplot(features_corpdfm, aes(feature, frequency))+
-  geom_col(fill="#0B1354")+
-  labs (title = "Top 10 Frequent bigrams",
-        subtitle = "2018-2023",
-        y = "",
-        x = "")+
-  theme_few()+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=17, face="bold"))
-
-
-# top frequent bigrams occurring each year
-top_words <- word_freq %>%
-  group_by (group) %>%
-  top_n(15, frequency) %>% # Change the number to show more or fewer words
-  ungroup ()
-
-top_words %>%
-  mutate(group = as.factor(group)) %>% 
-  ggplot(aes(feature,frequency, fill=group)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~group, scales = "free_y") +
-  coord_flip()+
-  scale_y_continuous(expand = c(0,0)) +
-  labs(x = "", y = "", title = "Conditions Spread Over 5 years") 
-
-
-## Creating Topic Models
-library(topicmodels)
-library(ldatuning)
-library(tm)
-k_metrics <- ldatuning::FindTopicsNumber(
-  corp_dfm,
-  topics = seq(5, 50, by = 5),
-  metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"),
-  method = "Gibbs",
-  control = list(seed = 77),
-  mc.cores = NA,
-  return_models = FALSE,
-  verbose = FALSE,
-  libpath = NULL
-)
-FindTopicsNumber_plot(k_metrics)
-#The best number of topics shows low values for CaoJuan2009 and high values for Deveaud2014
-#k= number of topics
-
-# LDA is a mathematical method for estimating the mixture of words that is 
-# associated with each topic, while also determining the mixture of topics that describes each document 
-tds_lda <- LDA(corp_dfm, 
-               k = 11,
-               method="Gibbs",
-               control = list(seed = 588))# set random number generator seed
-
-terms(tds_lda, 5)
-# have a look a some of the results (posterior distributions)
-tmResult <- posterior(tds_lda)
-attributes(tmResult) #names -> "terms"  "topics"
-
-# topics are probability distributions over the entire vocabulary
-beta <- tmResult$terms   # get beta from results
-dim(beta)                # K distributions over nTerms(DTM) terms
-
-# for every document we have a probability distribution of its contained topics
-theta <- tmResult$topics 
-dim(theta)               # nDocs(DTM) distributions over K topics
-
-topicNames <- apply(terms(tds_lda, 5), 2, paste, collapse = " ")
-topicNames
-
-
-# Visualizing topics based on the one interested
-topicToViz <- 3
-# select to 40 most probable terms from the topic by sorting the term-topic-probability vector in decreasing order
-top40terms <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
-words <- names(top40terms)
-# extract the probabilities of each of the 40 terms  
-probabilities <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
-# visualize the terms as wordcloud
-mycolors <- brewer.pal(8, "Dark2")
-wordcloud(words, probabilities, random.order = FALSE, color = mycolors)
-
-
-
-
-
-#BTM
-# The Biterm Topic Model (BTM) is a word co-occurrence based topic 
-# model that learns topics by modeling word-word co-occurrences patterns
-# Tag parts of speech
-library(udpipe)
-library(data.table)
-colnames(data_1)[1]  <- "doc_id"
-
-anno    <- udpipe(data_1, "english", trace = 11)
-biterms <- as.data.table(anno)
-biterms <- biterms[, cooccurrence(x = lemma,
-                                  relevant = upos %in% c("NOUN",
-                                                         "ADJ",
-                                                         "PROPN"),
-                                  skipgram = 5),
-                   by = list(doc_id)]
-
-# Build BTM
-library(BTM)
-set.seed(588)
-traindata <- subset(anno, upos %in% c("NOUN", "ADJ", "PROPN"))
-traindata <- traindata[, c("doc_id", "lemma")]
-model <- BTM(traindata, k = 11, 
-             beta = 0.01, 
-             iter = 500,
-             biterms = biterms, 
-             trace = 100)
-
-# Plot Model Results (do not run when knitting)
-library(ggraph)
-library(textplot)
-library(concaveman)
-plot(model,
-     top_n = 11,
-     title = "BTM model",
-     subtitle = "K = 11, 500 Training Iterations",
-     labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-                "10","11"))
-
-
-
-
-# pic one group from BTM 
-sickle <- data[grep("sickl", data$text), ]
-row.names(sickle) <- NULL
-
-### sickle_data <- clinicals[grep("sickl", clinicals$Condition), ]
-
-## A case of Sickle cell in Kenya
-
-## sample size
-class(sickle$target_size)
-sickle$target_size <- as.numeric(as.character(sickle$target_size))
-# summary
-summary(sickle$target_size)
-# summary(sickle$target_size)
-# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-# 8.0    80.0   224.0   239.8   344.0   600.0 
-
-# Barplot
-library(forcats)
-sickle %>% 
-  mutate(name = fct_reorder(trial_id, desc(target_size))) %>%
-  ggplot(aes(x=trial_id,y= target_size)) +
-  geom_bar(stat='identity')
-
-
-
-
-
-
-
-
-Observational <- clinicals[grep("Observational", clinicals$study_type), ]
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ## Analyze all HIV clinical trials
@@ -434,6 +182,7 @@ ggplot(data = hiv_behavioral,
         x = "Population Target size")+
   theme_few()
 
+# Practice code on secondary sponsors
 # clean data from secondary_sponsors column
 hiv_behavioral$secondary_sponsor <- tolower(hiv_behavioral$secondary_sponsor)
 hiv_behavioral$secondary_sponsor <- gsub("<br>","", hiv_behavioral$secondary_sponsor)
@@ -446,7 +195,7 @@ hiv_behavioral[10, ]
 
 
 
-
+# circular plot
 # Visualization on Target size
 # visualize according to groups
 
@@ -471,184 +220,20 @@ ggplot(hiv_behavioral, aes(x = trial_id, y = target_size, fill = countries)) +
 
 
 
-
-
-
-
-
-#BITERM MOdelling for the Primary outcome
-
-data_2 <- hiv_behavioral[ , c('trial_id','year','primary_outcome','text')]
-
-
-## Text Mining
-# Create a corpus of the document
-
-data_corp <- corpus(data_2, text_field = 'text') #initialize corpus for scientific title
-
-summary(data_corp,3)
-#create a new id for the variables
-docid <- paste(data_corp$trial_id,
-               data_corp$year,
-               data_corp$primary_outcome,
-               sep= " ")
-docnames(data_corp) <- docid
-head(docvars(data_corp))
-
-
-# create tokens
-corp <- tokens(data_corp, what='word',
-               remove_punct = TRUE, remove_numbers = TRUE,
-               remove_symbols = TRUE, remove_separators = TRUE)
-# stem
-corp <- tokens_wordstem(corp, language = 'en')
-
-# remove stopwords 
-corp <- tokens_select(corp, stopwords(),selection = 'remove')
-corp[[20]]
-#construct a Document Feature Matrix
-corp_dfm <- dfm(corp)
-
-
-
-# Data visualization
-# Visualize a wordcloud of the Conditions and Scientific titles
-# Create a bigram using tokens_ngram
-toks_ngram <- tokens_ngrams(corp, n = 2, concatenator = " ")
-head(toks_ngram[[1]], 30)
-
-# wordcloud plot
-# load quanteda packages
-library("quanteda.textplots")
-library("quanteda.textstats")
-bigram <- dfm(toks_ngram)
-bigram_freq<-textstat_frequency(bigram)
-
-textplot_wordcloud(bigram,max_words = 100,
-                   ordered_color = TRUE)
-
-
-# Observe the distribution of date of registration over the years
-years_m %>%
-  ggplot(aes(x=date_registration, color= factor(month)))+
-  geom_bar(show.legend = FALSE)+
-  labs(y="Date",
-       x= "Article counts",
-       title = "Scientific titles")
-
-# Asses the frequency distribution of the bigrams, data grouped per year
-word_freq <- textstat_frequency(bigram, groups = data$year)
-
-# frequency plot of the top 10 most frequent word
-features_corpdfm <- textstat_frequency(bigram, n=10)
-features_corpdfm$feature <- with(features_corpdfm, reorder(feature, -frequency))
-ggplot(features_corpdfm, aes(feature, frequency))+
-  geom_col(fill="#0B1354")+
-  labs (title = "Top 10 Frequent bigrams",
-        subtitle = "2018-2023",
-        y = "",
-        x = "")+
-  theme_few()+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=17, face="bold"))
-
-
-# top frequent bigrams occurring each year
-top_words <- word_freq %>%
-  group_by (group) %>%
-  top_n(15, frequency) %>% # Change the number to show more or fewer words
-  ungroup ()
-
-top_words %>%
-  mutate(group = as.factor(group)) %>% 
-  ggplot(aes(feature,frequency, fill=group)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(~group, scales = "free_y") +
-  coord_flip()+
-  scale_y_continuous(expand = c(0,0)) +
-  labs(x = "", y = "", title = "Conditions Spread Over 5 years") 
-
-
-## Creating Topic Models
-library(topicmodels)
-library(ldatuning)
-library(tm)
-k_metrics <- ldatuning::FindTopicsNumber(
-  corp_dfm,
-  topics = seq(5, 50, by = 5),
-  metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"),
-  method = "Gibbs",
-  control = list(seed = 77),
-  mc.cores = NA,
-  return_models = FALSE,
-  verbose = FALSE,
-  libpath = NULL
-)
-FindTopicsNumber_plot(k_metrics)
-#The best number of topics shows low values for CaoJuan2009 and high values for Deveaud2014
-#k= number of topics
-
-# LDA is a mathematical method for estimating the mixture of words that is 
-# associated with each topic, while also determining the mixture of topics that describes each document 
-tds_lda <- LDA(corp_dfm, 
-               k = 11,
-               method="Gibbs",
-               control = list(seed = 588))# set random number generator seed
-
-terms(tds_lda, 5)
-
-# have a look a some of the results (posterior distributions)
-tmResult <- posterior(tds_lda)
-attributes(tmResult) #names -> "terms"  "topics"
-
-# topics are probability distributions over the entire vocabulary
-beta <- tmResult$terms   # get beta from results
-dim(beta)                # K distributions over nTerms(DTM) terms
-
-# for every document we have a probability distribution of its contained topics
-theta <- tmResult$topics 
-dim(theta)               # nDocs(DTM) distributions over K topics
-
-topicNames <- apply(terms(tds_lda, 5), 2, paste, collapse = " ")
-topicNames
-
-
-# Visualizing topics based on the one interested
-topicToViz <- 3
-# select to 40 most probable terms from the topic by sorting the term-topic-probability vector in decreasing order
-top40terms <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
-words <- names(top40terms)
-# extract the probabilities of each of the 40 terms  
-probabilities <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
-# visualize the terms as wordcloud
-mycolors <- brewer.pal(8, "Dark2")
-wordcloud(words, probabilities, random.order = FALSE, color = mycolors)
-
-
-
-
-
-
-
 ## Making maps
 library(tmap)
 library(sf)
 library(rnaturalearth)
 library(rnaturalearthdata)
+library(dplyr)
 
 world <- ne_countries(scale = "medium", returnclass = "sf")
 target_countries <- c("Uganda", "Kenya", "Tanzania")
 east_africa <- world[world$name %in% target_countries, ]
 
-tm_shape(east_africa) +
-  tm_borders() +
-  tm_fill(col = "name") +
-  tm_text("name", size = 0.8) +
-  tm_layout(title = "Map of Uganda, Kenya, and Tanzania")
-
+# distribution of target size numbers across the countries
 east_africa$name <- tolower(east_africa$name)
 
-
-library(dplyr)
 
 merged_data <- left_join(east_africa, hiv_behavioral, by = c("name" = "countries"))
 
@@ -661,16 +246,16 @@ tm_shape(merged_data) +
 
 
 
-## Time Series analysis/ Years
+## 'Time Series' analysis/ Years
 class(hiv_behavioral$date_registration)
 
 hiv_behavioral$constant_value <- 1
 
-ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, size= target_size, color = target_size)) +
-  geom_point(shape = 16 ) +
+ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, size= target_size)) +
+  geom_point(shape = 16, color = 'red' ) +
   labs(x = "Date", y = "Value", title = "Line Plot of Date Column")
 
-## I need to clean the sponsors column 
+## clean the sponsors column 
 hiv_behavioral$primary_sponsor <- gsub("[.,;:-]","", hiv_behavioral$primary_sponsor)
 hiv_behavioral$institution_type <- ifelse(grepl("university", hiv_behavioral$primary_sponsor), "university", "Research Institution")
 
@@ -707,48 +292,18 @@ trial_id <- hiv_behavioral$extracted_part
 print(trial_id)
 
 
+# Extract the trial ID code then save it, to be used in Python 
 extracted_parts_string <- paste(sapply(hiv_behavioral$extracted_part, trimws), collapse = ",")
+
 print(extracted_parts_string)
 
 
 
-#########
-# World map is available in the maps package
-library(maps)
-
-# No margin
-par(mar=c(0,0,0,0))
-
-# World map
-map('world',
-    col="#f2f2f2", fill=TRUE, bg="white", lwd=0.05,
-    mar=rep(0,4),border=0, ylim=c(-80,80) 
-)
-
-
-library(ggmap)
-
-register_google(key = "AIzaSyADngLnfcUhOTVqk1euPiz530YAjDlVKiI")
-
-hiv_behavioral <- hiv_behavioral %>%
-  mutate(GeocodeResult = geocode(primary_sponsor))
 
 
 
-hiv_behavioral$Latitude <- hiv_behavioral$GeocodeResult$lat
-hiv_behavioral$Longitude <- hiv_behavioral$GeocodeResult$lon
-
-names(hiv_behavioral)
-
-map('world',
-    col="#f2f2f2", fill=TRUE, bg="white", lwd=0.05,
-    mar=rep(0,4),border=0, ylim=c(-80,80) 
-)
-points(x=hiv_behavioral$Longitude, y=hiv_behavioral$Latitude, col="slateblue", cex=1, pch=20)
 
 
-hiv_behavioral <- hiv_behavioral %>%
-  mutate(GeocodeResult = geocode(primary_sponsor))
 
 
 
@@ -915,6 +470,156 @@ PACTR <- data[str_detect(data$trial_id, pattern), ]
 
 
 
+
+
+
+
+#BITERM MOdelling for the Primary outcome
+
+data_2 <- hiv_behavioral[ , c('trial_id','year','primary_outcome','text')]
+
+
+## Text Mining
+# Create a corpus of the document
+
+data_corp <- corpus(data_2, text_field = 'text') #initialize corpus for scientific title
+
+summary(data_corp,3)
+#create a new id for the variables
+docid <- paste(data_corp$trial_id,
+               data_corp$year,
+               data_corp$primary_outcome,
+               sep= " ")
+docnames(data_corp) <- docid
+head(docvars(data_corp))
+
+
+# create tokens
+corp <- tokens(data_corp, what='word',
+               remove_punct = TRUE, remove_numbers = TRUE,
+               remove_symbols = TRUE, remove_separators = TRUE)
+# stem
+corp <- tokens_wordstem(corp, language = 'en')
+
+# remove stopwords 
+corp <- tokens_select(corp, stopwords(),selection = 'remove')
+corp[[20]]
+#construct a Document Feature Matrix
+corp_dfm <- dfm(corp)
+
+
+
+# Data visualization
+# Visualize a wordcloud of the Conditions and Scientific titles
+# Create a bigram using tokens_ngram
+toks_ngram <- tokens_ngrams(corp, n = 2, concatenator = " ")
+head(toks_ngram[[1]], 30)
+
+# wordcloud plot
+# load quanteda packages
+library("quanteda.textplots")
+library("quanteda.textstats")
+bigram <- dfm(toks_ngram)
+bigram_freq<-textstat_frequency(bigram)
+
+textplot_wordcloud(bigram,max_words = 100,
+                   ordered_color = TRUE)
+
+
+# Observe the distribution of date of registration over the years
+years_m %>%
+  ggplot(aes(x=date_registration, color= factor(month)))+
+  geom_bar(show.legend = FALSE)+
+  labs(y="Date",
+       x= "Article counts",
+       title = "Scientific titles")
+
+# Asses the frequency distribution of the bigrams, data grouped per year
+word_freq <- textstat_frequency(bigram, groups = data$year)
+
+# frequency plot of the top 10 most frequent word
+features_corpdfm <- textstat_frequency(bigram, n=10)
+features_corpdfm$feature <- with(features_corpdfm, reorder(feature, -frequency))
+ggplot(features_corpdfm, aes(feature, frequency))+
+  geom_col(fill="#0B1354")+
+  labs (title = "Top 10 Frequent bigrams",
+        subtitle = "2018-2023",
+        y = "",
+        x = "")+
+  theme_few()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=17, face="bold"))
+
+
+# top frequent bigrams occurring each year
+top_words <- word_freq %>%
+  group_by (group) %>%
+  top_n(15, frequency) %>% # Change the number to show more or fewer words
+  ungroup ()
+
+top_words %>%
+  mutate(group = as.factor(group)) %>% 
+  ggplot(aes(feature,frequency, fill=group)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~group, scales = "free_y") +
+  coord_flip()+
+  scale_y_continuous(expand = c(0,0)) +
+  labs(x = "", y = "", title = "Conditions Spread Over 5 years") 
+
+
+## Creating Topic Models
+library(topicmodels)
+library(ldatuning)
+library(tm)
+k_metrics <- ldatuning::FindTopicsNumber(
+  corp_dfm,
+  topics = seq(5, 50, by = 5),
+  metrics = c("Griffiths2004", "CaoJuan2009", "Arun2010", "Deveaud2014"),
+  method = "Gibbs",
+  control = list(seed = 77),
+  mc.cores = NA,
+  return_models = FALSE,
+  verbose = FALSE,
+  libpath = NULL
+)
+FindTopicsNumber_plot(k_metrics)
+#The best number of topics shows low values for CaoJuan2009 and high values for Deveaud2014
+#k= number of topics
+
+# LDA is a mathematical method for estimating the mixture of words that is 
+# associated with each topic, while also determining the mixture of topics that describes each document 
+tds_lda <- LDA(corp_dfm, 
+               k = 11,
+               method="Gibbs",
+               control = list(seed = 588))# set random number generator seed
+
+terms(tds_lda, 5)
+
+# have a look a some of the results (posterior distributions)
+tmResult <- posterior(tds_lda)
+attributes(tmResult) #names -> "terms"  "topics"
+
+# topics are probability distributions over the entire vocabulary
+beta <- tmResult$terms   # get beta from results
+dim(beta)                # K distributions over nTerms(DTM) terms
+
+# for every document we have a probability distribution of its contained topics
+theta <- tmResult$topics 
+dim(theta)               # nDocs(DTM) distributions over K topics
+
+topicNames <- apply(terms(tds_lda, 5), 2, paste, collapse = " ")
+topicNames
+
+
+# Visualizing topics based on the one interested
+topicToViz <- 3
+# select to 40 most probable terms from the topic by sorting the term-topic-probability vector in decreasing order
+top40terms <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
+words <- names(top40terms)
+# extract the probabilities of each of the 40 terms  
+probabilities <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
+# visualize the terms as wordcloud
+mycolors <- brewer.pal(8, "Dark2")
+wordcloud(words, probabilities, random.order = FALSE, color = mycolors)
 
 
 
