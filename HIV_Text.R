@@ -657,9 +657,9 @@ class(hiv_behavioral$date_registration)
 
 hiv_behavioral$constant_value <- 1
 
-ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, size= target_size, color = target_size)) +
-  geom_point(shape = 16 ) +
-  labs(x = "Date", y = "Value", title = "Line Plot of Date Column")
+ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, size= target_size )) +
+  geom_point(shape = 16, color ='red' ) +
+  labs(x = "Date", y = "Value", title = " Target Size Plot")
 
 ## I need to clean the sponsors column 
 hiv_behavioral$primary_sponsor <- gsub("[.,;:-]","", hiv_behavioral$primary_sponsor)
