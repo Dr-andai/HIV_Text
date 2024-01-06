@@ -22,8 +22,8 @@ extrafont::loadfonts(device = "win")
 #Load Clinical Trials in Kenya Data Set
 # clinicals <- xmlToDataFrame("KenyaTrials.xml")
 KE_clinicals <- xmlToDataFrame("KenyaTrials.xml")
-TZ_clinicals <- xmlToDataFrame("Tanzania.xml")
-UG_clinicals <- xmlToDataFrame("Uganda.xml")
+TZ_clinicals <- xmlToDataFrame("TanzaniaTrials.xml")
+UG_clinicals <- xmlToDataFrame("UgandaTrials.xml")
 
 
 # # bind data frame
@@ -51,11 +51,11 @@ clinicals <- janitor::clean_names(clinicals)
 
 # -- Data was uploaded on 14th/06/2023
 
-# Create a data frame for Clinical Trials conducted over the last 5 years
+# Create a data frame for Clinical Trials conducted over the last 5 years and 20 years
 # Obtain the following columns: Trial ID, Date of Registration(year and month),Condition and Scientific Title
 
 fiveyears <- clinicals[clinicals$date_registration >= "2019-01-01" & clinicals$date_registration <= "2023-06-01", ]
-twentyyears <- clinicals[clinicals$date_registration >= "2003-01-01" & clinicals$date_registration <= "2023-06-01", ]
+twentyyears <- clinicals[clinicals$date_registration >= "2003-01-01" & clinicals$date_registration <= "2023-12-31", ]
 
 # create year and month date variables - method 1
 years_date <- twentyyears %>%
@@ -72,8 +72,8 @@ class(years_m$year)
 
 
 
-# data frame Containing Clinical Trials from 2019.
-# with year and month as separate
+# data frame Containing Clinical Trials from 2003.
+
 data <- years_m[ , c('trial_id','date_registration','phase','primary_sponsor','condition','scientific_title',
                      'intervention','countries','target_size','primary_outcome','secondary_outcome','web_address')]
 
@@ -173,14 +173,14 @@ data_1 <- data[ , c('trial_id','year','month','text')]
 
 
 
-## Text Mining
+## Text Mining for Biterm Modelling
 # Create a corpus of the document
 
 data_corp <- corpus(data_1, text_field = 'text') #initialize corpus for scientific title
 
 summary(data_corp,3)
 #create a new id for the variables
-docid <- paste(data_corp$trial_id,
+docid <- paste(data_corp$NCTNumber,
                data_corp$year,
                data_corp$month,
                sep= " ")
@@ -405,7 +405,9 @@ Observational <- clinicals[grep("Observational", clinicals$study_type), ]
 
 
 
-
+#BITERM MOdelling for the Scientific Title
+data$text <- paste(data$primary_outcome, data$scientific_title, sep=" ")
+row.names(data) <- NULL  
 
 
 ## Analyze all HIV clinical trials
@@ -468,9 +470,9 @@ ggplot(hiv_behavioral, aes(x = trial_id, y = target_size, fill = countries)) +
 
 
 
-#BITERM MOdelling for the Primary outcome
 
-data_2 <- hiv_behavioral[ , c('trial_id','year','primary_outcome','text')]
+
+data_2 <- hiv_behavioral[ , c('trial_id','date_registration','text')]
 
 
 ## Text Mining
@@ -481,7 +483,7 @@ data_corp <- corpus(data_2, text_field = 'text') #initialize corpus for scientif
 summary(data_corp,3)
 #create a new id for the variables
 docid <- paste(data_corp$trial_id,
-               data_corp$year,
+               data_corp$date_registration,
                data_corp$primary_outcome,
                sep= " ")
 docnames(data_corp) <- docid
@@ -493,7 +495,7 @@ corp <- tokens(data_corp, what='word',
                remove_punct = TRUE, remove_numbers = TRUE,
                remove_symbols = TRUE, remove_separators = TRUE)
 # stem
-corp <- tokens_wordstem(corp, language = 'en')
+corp <- tokens_wordstem(corp, language = 'en') # don't run this
 
 # remove stopwords 
 corp <- tokens_select(corp, stopwords(),selection = 'remove')
@@ -504,7 +506,7 @@ corp_dfm <- dfm(corp)
 
 
 # Data visualization
-# Visualize a wordcloud of the Conditions and Scientific titles
+# Visualize a wordcloud of the Primary outcome and Scientific titles
 # Create a bigram using tokens_ngram
 toks_ngram <- tokens_ngrams(corp, n = 2, concatenator = " ")
 head(toks_ngram[[1]], 30)
@@ -529,7 +531,7 @@ years_m %>%
        title = "Scientific titles")
 
 # Asses the frequency distribution of the bigrams, data grouped per year
-word_freq <- textstat_frequency(bigram, groups = data$year)
+word_freq <- textstat_frequency(bigram, groups = data$date_registration) # error: groups must have length ndoc(x)
 
 # frequency plot of the top 10 most frequent word
 features_corpdfm <- textstat_frequency(bigram, n=10)
@@ -537,7 +539,7 @@ features_corpdfm$feature <- with(features_corpdfm, reorder(feature, -frequency))
 ggplot(features_corpdfm, aes(feature, frequency))+
   geom_col(fill="#0B1354")+
   labs (title = "Top 10 Frequent bigrams",
-        subtitle = "2018-2023",
+        subtitle = "2003-2023",
         y = "",
         x = "")+
   theme_few()+
@@ -582,7 +584,7 @@ FindTopicsNumber_plot(k_metrics)
 # LDA is a mathematical method for estimating the mixture of words that is 
 # associated with each topic, while also determining the mixture of topics that describes each document 
 tds_lda <- LDA(corp_dfm, 
-               k = 11,
+               k = 9,
                method="Gibbs",
                control = list(seed = 588))# set random number generator seed
 
@@ -614,6 +616,48 @@ probabilities <- sort(tmResult$terms[topicToViz,], decreasing=TRUE)[1:40]
 # visualize the terms as wordcloud
 mycolors <- brewer.pal(8, "Dark2")
 wordcloud(words, probabilities, random.order = FALSE, color = mycolors)
+
+
+
+
+
+#BTM
+# The Biterm Topic Model (BTM) is a word co-occurrence based topic 
+# model that learns topics by modeling word-word co-occurrences patterns
+# Tag parts of speech
+library(udpipe)
+library(data.table)
+colnames(data_2)[2]  <- "doc_id"
+
+anno    <- udpipe(data_2, "english", trace = 9)
+biterms <- as.data.table(anno)
+biterms <- biterms[, cooccurrence(x = lemma,
+                                  relevant = upos %in% c("NOUN",
+                                                         "ADJ",
+                                                         "PROPN"),
+                                  skipgram = 5),
+                   by = list(doc_id)]
+
+# Build BTM
+library(BTM)
+set.seed(588)
+traindata <- subset(anno, upos %in% c("NOUN", "ADJ", "PROPN"))
+traindata <- traindata[, c("doc_id", "lemma")]
+model <- BTM(traindata, k = 9, 
+             beta = 0.01, 
+             iter = 500,
+             biterms = biterms, 
+             trace = 100)
+
+# Plot Model Results (do not run when knitting)
+library(ggraph)
+library(textplot)
+library(concaveman)
+plot(model,
+     top_n = 9,
+     title = "BTM model",
+     subtitle = "K = 9, 500 Training Iterations",
+     labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
 
 
 
@@ -653,17 +697,20 @@ tm_shape(merged_data) +
 
 
 ## Time Series analysis/ Years
+## I need to clean the sponsors column 
+hiv_behavioral$primary_sponsor <- gsub("[.,;:-]","", hiv_behavioral$primary_sponsor)
+hiv_behavioral$institution_type <- ifelse(grepl("university", hiv_behavioral$primary_sponsor), "University", "Research Institution")
+
 class(hiv_behavioral$date_registration)
 
 hiv_behavioral$constant_value <- 1
 
-ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, size= target_size )) +
-  geom_point(shape = 16, color ='red' ) +
-  labs(x = "Date", y = "Value", title = " Target Size Plot")
+ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, size= target_size, color= institution_type )) +
+  geom_point(shape = 16 ) +
+  labs(x = "Date", y = "Primary_Sponsor", title = "Behavioural Intervention Clinical Trials: 2003-2023")
 
-## I need to clean the sponsors column 
-hiv_behavioral$primary_sponsor <- gsub("[.,;:-]","", hiv_behavioral$primary_sponsor)
-hiv_behavioral$institution_type <- ifelse(grepl("university", hiv_behavioral$primary_sponsor), "university", "Research Institution")
+
+
 
 ggplot(hiv_behavioral, aes(x = date_registration, y = primary_sponsor, color = institution_type)) +
   geom_point(shape = 16) +
