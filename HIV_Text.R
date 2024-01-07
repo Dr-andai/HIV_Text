@@ -156,8 +156,8 @@ data$countries <- sapply(data$countries, remove_duplicates)
 data[31, ]
 
 
-# text column: combine condition and scientific title column
-data$text <- paste(data$condition, data$scientific_title, sep=" ")
+# text column: scientific title column
+data$text <- paste(data$scientific_title, sep=" ")
 row.names(data) <- NULL
 
 data_1 <- data[ , c('trial_id','year','month','text')]
@@ -495,7 +495,7 @@ corp <- tokens(data_corp, what='word',
                remove_punct = TRUE, remove_numbers = TRUE,
                remove_symbols = TRUE, remove_separators = TRUE)
 # stem
-corp <- tokens_wordstem(corp, language = 'en') # don't run this
+#corp <- tokens_wordstem(corp, language = 'en') # don't run this
 
 # remove stopwords 
 corp <- tokens_select(corp, stopwords(),selection = 'remove')
@@ -584,7 +584,7 @@ FindTopicsNumber_plot(k_metrics)
 # LDA is a mathematical method for estimating the mixture of words that is 
 # associated with each topic, while also determining the mixture of topics that describes each document 
 tds_lda <- LDA(corp_dfm, 
-               k = 9,
+               k = 10,
                method="Gibbs",
                control = list(seed = 588))# set random number generator seed
 
@@ -629,7 +629,7 @@ library(udpipe)
 library(data.table)
 colnames(data_2)[2]  <- "doc_id"
 
-anno    <- udpipe(data_2, "english", trace = 9)
+anno    <- udpipe(data_2, "english", trace = 10)
 biterms <- as.data.table(anno)
 biterms <- biterms[, cooccurrence(x = lemma,
                                   relevant = upos %in% c("NOUN",
@@ -643,7 +643,7 @@ library(BTM)
 set.seed(588)
 traindata <- subset(anno, upos %in% c("NOUN", "ADJ", "PROPN"))
 traindata <- traindata[, c("doc_id", "lemma")]
-model <- BTM(traindata, k = 9, 
+model <- BTM(traindata, k = 10, 
              beta = 0.01, 
              iter = 500,
              biterms = biterms, 
@@ -654,10 +654,10 @@ library(ggraph)
 library(textplot)
 library(concaveman)
 plot(model,
-     top_n = 9,
+     top_n = 10,
      title = "BTM model",
-     subtitle = "K = 9, 500 Training Iterations",
-     labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+     subtitle = "K = 10, 500 Training Iterations",
+     labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8", "9","10"))
 
 
 

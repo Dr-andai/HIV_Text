@@ -89,3 +89,42 @@ dim(theta)               # nDocs(DTM) distributions over K topics
 
 topicNames <- apply(terms(tds_lda, 5), 2, paste, collapse = " ")
 topicNames
+
+
+#BTM
+# The Biterm Topic Model (BTM) is a word co-occurrence based topic 
+# model that learns topics by modeling word-word co-occurrences patterns
+# Tag parts of speech
+library(udpipe)
+library(data.table)
+colnames(df)[4]  <- "doc_id"
+
+anno    <- udpipe(df, "english", trace = 8)
+biterms <- as.data.table(anno)
+biterms <- biterms[, cooccurrence(x = lemma,
+                                  relevant = upos %in% c("NOUN",
+                                                         "ADJ",
+                                                         "PROPN"),
+                                  skipgram = 5),
+                   by = list(doc_id)]
+
+# Build BTM
+library(BTM)
+set.seed(588)
+traindata <- subset(anno, upos %in% c("NOUN", "ADJ", "PROPN"))
+traindata <- traindata[, c("doc_id", "lemma")]
+model <- BTM(traindata, k = 8, 
+             beta = 0.01, 
+             iter = 500,
+             biterms = biterms, 
+             trace = 100)
+
+# Plot Model Results (do not run when knitting)
+library(ggraph)
+library(textplot)
+library(concaveman)
+plot(model,
+     top_n = 8,
+     title = "BTM model",
+     subtitle = "K = 8, 500 Training Iterations",
+     labels = c("0", "1", "2", "3", "4", "5", "6", "7", "8"))
